@@ -12,6 +12,15 @@
 hash + 6 znakov + /r + /n
 """
 from configuration import Configuration
+from datetime import time
+
+def encode_clock(datetime: time) -> str:
+    """Encode a datetime object into a time string."""
+    open_hour = datetime.hour
+    open_minute = datetime.minute
+    open_hour_str = f"{open_hour:02}"
+    open_minute_str = f"{open_minute:02}"
+    return f"{open_hour_str}:{open_minute_str}"
 
 def encode_message(config: Configuration) -> list[str]:
     """Encode the configuration into a list of messages to send."""
@@ -24,18 +33,15 @@ def encode_message(config: Configuration) -> list[str]:
     
     # Open Time
     if config.open_time:
-        open_hour = config.open_time.hour
-        open_minute = config.open_time.minute
-        messages.append(f"#O {open_hour} {open_minute}")
+        messages.append(f"#O {encode_clock(config.open_time)}")
     
     # Close Time
     if config.close_time:
-        close_hour = config.close_time.hour
-        close_minute = config.close_time.minute
-        messages.append(f"#C {close_hour} {close_minute}")
+        messages.append(f"#C {encode_clock(config.close_time)}")
 
     if config.a_right is not None:
-        if config.a_right:
+        if config.a_right and config.group in ['A', 'C'] or \
+        not config.a_right and config.group in ['B', 'D']:
             messages.append(f"#RIGHT  ")
         else:
             messages.append(f"#LEFT   ")
@@ -44,7 +50,3 @@ def encode_message(config: Configuration) -> list[str]:
 
 def encode_end() -> str:
     return "#        "
-
-def enclode_force_stop() -> list[str]:
-    return [encode_end(), encode_end(), encode_end(), encode_end()]
-

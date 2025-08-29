@@ -3,20 +3,48 @@ from string import ascii_uppercase
 from datetime import datetime, timedelta
 import tkinter as tk
 from tkinter import ttk
-import serial.tools.list_ports
-import time
+import os
+import json
+import sys
 
 # Project-specific imports
 from serial_sender import SerialSender
 from configuration import Configuration
 from tkinter_clock import ClockPicker
-from custom_coder import encode_message, encode_end, enclode_force_stop
-import json
+from custom_coder import encode_message, encode_end
+
 
 # Constants
 SERIES = [f"{i:02}" for i in range(100)]
 GROUPS = list(ascii_uppercase[:4])
 PERIODS = ["3", "5", "10", "20", "30"]
+BAUD_RATE = 6900
+
+def get_config_path():
+    if getattr(sys, 'frozen', False):
+        base_dir = os.path.join(os.getenv("APPDATA"), "Ventus-App")
+    else:
+        base_dir = os.path.dirname(__file__)
+    os.makedirs(base_dir, exist_ok=True)
+    return os.path.join(base_dir, "config.json")
+
+def save_config(config: Configuration):
+    try:
+        with open(get_config_path(), "w") as f:
+            json.dump(config.to_dict(), f, indent=4)
+    except Exception as e:
+        print("Failed to save config:", e)
+
+def load_config() -> Configuration:
+    path = get_config_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+                return Configuration.from_dict(data)
+        except Exception as e:
+            print("Failed to load config:", e)
+    return Configuration()
 
 class MainApplication(tk.Tk):
     """Main GUI application for the Display Controller."""
@@ -24,13 +52,14 @@ class MainApplication(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Display Controller")
-        self.configuration = Configuration()
+        self.configuration = load_config()
         self.serial_sender: SerialSender | None = None
 
         self._setup_main_frame()
         self._setup_choice_frames()
         self._setup_com_frame()
         self._setup_debug_field()
+        self._setup_footer()
 
     # -------------------- UI Setup -------------------- #
     def _setup_main_frame(self) -> None:
@@ -48,33 +77,39 @@ class MainApplication(tk.Tk):
         # Series selection
         tk.Label(self.frame_choice1, text="Series").pack(anchor="w")
         self.series = ttk.Combobox(self.frame_choice1, values=SERIES, state="readonly")
-        self.series.set(SERIES[0])
+        self.series.set(self.configuration.series or SERIES[0])
         self.series.pack(fill="x")
         self.frame_choice1.grid(row=1, column=1, padx=5, pady=5)
 
         # Group selection
         tk.Label(self.frame_choice2, text="Group").pack(anchor="w")
         self.group = ttk.Combobox(self.frame_choice2, values=GROUPS, state="readonly")
-        self.group.set(GROUPS[0])
+        self.group.set(self.configuration.group or GROUPS[0])
         self.group.pack(fill="x")
         self.frame_choice2.grid(row=1, column=2, padx=5, pady=5)        
 
         # A = Right checkbox
-        self.a_right_var = tk.BooleanVar()
+        self.a_right_var = tk.BooleanVar(self.frame, value=self.configuration.a_right or False)
         tk.Checkbutton(self.frame, text="A = Right", variable=self.a_right_var)\
             .grid(row=2, column=2, padx=5, pady=5)
 
         # Close time picker
         self.clock2 = ClockPicker(
             self.frame,
-            text="Close"
+            text="Close",
         )       
         self.clock2.grid(row=3, column=1, padx=5, pady=5)
         self.clock1 = ClockPicker(self.frame, text="Open", 
-            command=lambda event: self.clock2.set_time(self.clock1.get_time() + timedelta(minutes=15))
+            command=lambda event: self.clock2.set_time(self.clock1.get_time() + timedelta(minutes=15)),
         )
         self.clock1.grid(row=2, column=1, padx=5, pady=5)
-        self.clock1._on_change()
+
+        if self.configuration.open_time:
+           self.clock1.set_time(self.configuration.open_time)
+           self.clock2.set_time(self.configuration.close_time) 
+        else:
+            self.clock1._on_change()
+
 
         # Period selection
         tk.Label(self.frame_choice3, text="Period").pack(anchor="w")
@@ -82,10 +117,6 @@ class MainApplication(tk.Tk):
         self.period.set(PERIODS[1])
         self.period.pack(fill="x")
         self.frame_choice3.grid(row=3, column=2, padx=5, pady=5)
-
-    def validate_close_time(event=None):
-        if self.clock2.get_time() <= self.clock1.get_time():
-            self.log_debug("Closing time must be later than opening time!")
 
     def _setup_com_frame(self) -> None:
         """Create COM port selection and control buttons."""
@@ -116,6 +147,11 @@ class MainApplication(tk.Tk):
         self.debug_field = tk.Text(self.frame, height=5, width=50, state="disabled", bg="#f0f0f0")
         self.debug_field.grid(row=5, column=0, columnspan=3, pady=10)
 
+    def _setup_footer(self) -> None:
+        """Create footer with version info."""
+        self.footer = tk.Label(self, text="Modelarsko Društvo Ventus © 2025", font=("Arial", 8), fg="gray")
+        self.footer.pack(side=tk.BOTTOM)
+
     def log_debug(self, message: str) -> None:
         """Append a line to the debug field and trim to last 4 lines."""
         self.debug_field.config(state="normal")
@@ -135,7 +171,9 @@ class MainApplication(tk.Tk):
         self.configuration.close_time = self.clock2.get_time()
         self.configuration.period = self.period.get()
         self.configuration.a_right = self.a_right_var.get()
-        self.configuration.com_port = self.com_port_combo.get()
+        # self.configuration.com_port = self.com_port_combo.get()
+
+        save_config(self.configuration)
 
     def display(self) -> None:
         """Gather configuration and send to device if valid."""
@@ -149,10 +187,13 @@ class MainApplication(tk.Tk):
 
     def connect(self) -> None:
         """Connect to the serial device."""
-        self.configuration.com_port = self.com_port_combo.get()
+        if not self.com_port_combo.get():
+            self.log_debug("Select a COM port first")
+            return
+        self.com_port = self.com_port_combo.get()
         self.configuration.period = self.period.get()
         self.serial_sender = SerialSender(
-            com_port=self.configuration.com_port,
+            com_port=self.com_port,
             period=self.configuration.period,
             speed=115200,
             on_done=lambda: self.everything_has_been_sent(),
@@ -162,15 +203,19 @@ class MainApplication(tk.Tk):
         self.serial_sender.start()
         self.status_canvas.itemconfig(self.status_oval, fill="green")
         self.connect_button.config(text="Disconnect", command=self.disconnect)
-        self.log_debug("Connected to " + self.configuration.com_port)
+        self.log_debug("Connected to " + self.com_port)
+        self.com_port_combo.config(state="disabled")
 
     def disconnect(self) -> None:
         """Disconnect from the serial device."""
-        self.serial_sender.send(encode_end())
+        self.finalise_sending()
         if self.serial_sender:
             self.serial_sender.stop()
         self.status_canvas.itemconfig(self.status_oval, fill="gray")
         self.connect_button.config(text="Connect", command=self.connect)
+        self.log_debug("Disconnected from " + self.com_port)
+        self.com_port = None
+        self.com_port_combo.config(state="enabled")
 
     def send_to_device(self) -> None:
         """Send configuration data to the connected device."""
@@ -179,16 +224,23 @@ class MainApplication(tk.Tk):
             return
         messages = encode_message(self.configuration)
         for message in messages:
+            self.after(0, self.serial_sender.clear_queue())
             self.after(0, self.serial_sender.send, message)
         self.display_button.config(text="Stop", command=self.force_end)
     
     def everything_has_been_sent(self) -> None:
         """Callback when all messages have been sent."""
+        self.display_button.config(text="Finish", command=self.finalise_sending)
+
+    def finalise_sending(self) -> None:
+        self.serial_sender.clear_queue()
+        self.serial_sender.send_flush(encode_end())
         self.display_button.config(text="Display", command=self.display)
 
     def force_end(self) -> None:
-        for i in range(4    ):
-            self.serial_sender.send(encode_end())
+        self.serial_sender.clear_queue()
+        for i in range(4):
+            self.serial_sender.send_flush(encode_end())
         self.display_button.config(text="Display", command=self.display)
 
     def sending_failed(self) -> None:
@@ -196,7 +248,7 @@ class MainApplication(tk.Tk):
 
     def refresh_ports(self) -> None:
         """Refresh the available COM ports."""
-        ports = serial.tools.list_ports.comports()
+        ports = SerialSender.list_ports()
         self.com_port_combo['values'] = [p.device for p in ports]
 
 if __name__ == "__main__":

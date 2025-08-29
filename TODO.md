@@ -18,7 +18,7 @@
 
 ### Close Time
 - [x] Izbira ure, kdaj se vrata za štart zaprejo.
-- [ ] Preverjanje: če je ura manjša od Open → pokaže opozorilo:
+- [x] Preverjanje: če je ura manjša od Open → pokaže opozorilo:
       `"Closing time must be later than opening time!"`.
 
 ### A = Right
@@ -30,8 +30,8 @@
 
 ### COM Port
 - [x] Izbira COM porta izmed vseh na voljo.
-- [ ] Naknadno se določi baud rate.
-- [ ] Prikaz samo dostopnih portov.
+- [x] Naknadno se določi baud rate.(sva rekla da se astavi standarden)
+- [x] Prikaz samo dostopnih portov.
 
 ### Buttons
 
@@ -43,28 +43,28 @@
   - Ob prekinitvi pošlje prazen niz `"#______"` (6 presledkov).
   
 #### Display / Finish
-- [ ] Gumb **Display** začne pošiljanje in zaklene vse izbire.
-- [ ] Ko pošiljanje aktivno, gumb se spremeni v **Finish**.
-- [ ] Ob pritisku **Finish**:
+- [x] Gumb **Display** začne pošiljanje in zaklene vse izbire. (dorekla da je boljse da ne vsega zaklene, gumb pa se spremeni v stop)
+- [x] Ko pošiljanje aktivno, gumb se spremeni v **Finish**.
+- [x] Ob pritisku **Finish**:
 - Pošlje prazen niz `"#______"` (6 presledkov).
 - Gumb se vrne na **Display**.
-- [ ] Gumb se aktivira takoj in ne po preteku periode.
-- [ ] Če je potrebno čakanje, polling naj bo vsaj vsako sekundo.
+- [x] Gumb se aktivira takoj in ne po preteku periode.
+- [x] Če je potrebno čakanje, polling naj bo vsaj vsako sekundo.
 
 ---
 
 ## COM Port Communication (ASCII Format)
 
-- [ ] Nizi se pošiljajo periodično na vsakih **Period** sekund.
+- [x] Nizi se pošiljajo periodično na vsakih **Period** sekund.
 - [x] Vsak niz se začne z `#`.
 
 ### Format
 
-- [ ] Serija in skupina: `#ss__g_`  
+- [x] Serija in skupina: `#ss__g_`  
       - `ss` → serija (00–99)  
       - `g` → skupina (A–D)
-- [ ] Odpiranje: `#O_hh_mm`
-- [ ] Zapiranje: `#C_hh_mm`
+- [x] Odpiranje: `#O_hh_mm`
+- [x] Zapiranje: `#C_hh_mm`
 - [ ] Smer letenja:
   - Če "A=Right" je označeno:
     - Skupini A ali C → `#RIGHT_`
@@ -73,4 +73,4 @@
     - Skupini A ali C → `#LEFT__`
     - Skupini B ali D → `#RIGHT_`
 
-- [ ] BAUD_RATE hardcode 6900
+- [x] BAUD_RATE hardcode 6900
