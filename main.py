@@ -18,7 +18,7 @@ from custom_coder import encode_message, encode_end
 SERIES = [f"{i:02}" for i in range(100)]
 GROUPS = list(ascii_uppercase[:4])
 PERIODS = ["3", "5", "10", "20", "30"]
-BAUD_RATE = 6900
+BAUD_RATES = [9600, 19200, 38400, 57600, 115200]
 
 def get_config_path():
     if getattr(sys, 'frozen', False):
@@ -126,6 +126,9 @@ class MainApplication(tk.Tk):
         self.com_port_combo = ttk.Combobox(self.row1, values=[], state="readonly")
         self.com_port_combo.bind("<Button-1>", lambda e: self.refresh_ports())
         self.com_port_combo.pack(side=tk.LEFT, fill="x", expand=True)
+        self.baud_rate_combo = ttk.Combobox(self.row1, values=BAUD_RATES, state="readonly", width=6)
+        self.baud_rate_combo.set(BAUD_RATES[0])
+        self.baud_rate_combo.pack(side=tk.RIGHT, padx=5)
         self.row1.pack(fill="x", pady=2)
 
         # Row 2: Status and buttons
@@ -137,7 +140,7 @@ class MainApplication(tk.Tk):
         self.connect_button = ttk.Button(self.row2, text="Connect", command=self.connect)
         self.connect_button.pack(side=tk.LEFT)
         self.display_button = ttk.Button(self.row2, text="Display", command=self.display)
-        self.display_button.pack(side=tk.RIGHT)
+        self.display_button.pack(side=tk.LEFT)
         self.row2.pack(fill="x", pady=2)
 
         self.frame_choice4.grid(row=4, column=0, columnspan=3, pady=10)
@@ -195,8 +198,7 @@ class MainApplication(tk.Tk):
         self.serial_sender = SerialSender(
             com_port=self.com_port,
             period=self.configuration.period,
-            speed=115200,
-            on_done=lambda: self.everything_has_been_sent(),
+            speed=self.baud_rate_combo.get(),
             on_failure=lambda: self.sending_failed(),
             log_debug=self.log_debug
         )
@@ -205,6 +207,7 @@ class MainApplication(tk.Tk):
         self.connect_button.config(text="Disconnect", command=self.disconnect)
         self.log_debug("Connected to " + self.com_port)
         self.com_port_combo.config(state="disabled")
+        self.baud_rate_combo.config(state="disabled")
 
     def disconnect(self) -> None:
         """Disconnect from the serial device."""
@@ -216,6 +219,7 @@ class MainApplication(tk.Tk):
         self.log_debug("Disconnected from " + self.com_port)
         self.com_port = None
         self.com_port_combo.config(state="enabled")
+        self.baud_rate_combo.config(state="enabled")
 
     def send_to_device(self) -> None:
         """Send configuration data to the connected device."""
@@ -223,13 +227,9 @@ class MainApplication(tk.Tk):
             self.log_debug("Not connected to any device.")
             return
         messages = encode_message(self.configuration)
+        self.after(0, self.serial_sender.clear_queue())
         for message in messages:
-            self.after(0, self.serial_sender.clear_queue())
             self.after(0, self.serial_sender.send, message)
-        self.display_button.config(text="Stop", command=self.force_end)
-    
-    def everything_has_been_sent(self) -> None:
-        """Callback when all messages have been sent."""
         self.display_button.config(text="Finish", command=self.finalise_sending)
 
     def finalise_sending(self) -> None:

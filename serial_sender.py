@@ -8,18 +8,17 @@ import logging
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s")
 
 class SerialSender:
-    def __init__(self, com_port, period, speed, on_done=None, on_failure=None, log_debug=None):
+    def __init__(self, com_port, period, speed, on_failure=None, log_debug=None):
         self.com_port = com_port
         self.period = int(period)
         self.speed = speed
         self.running = False
-        self.msg_queue = queue.Queue()
+        self.messages = []
         self.thread = None
         self.ser = None
 
         # Callbacks
         self.log_debug = log_debug if log_debug else logging.debug
-        self.on_done = on_done if on_done else lambda: None
         self.on_failure = on_failure if on_failure else lambda: None
 
     def start(self):
@@ -44,21 +43,19 @@ class SerialSender:
                 logging.error(f"Error closing serial port: {e}")
 
     def send(self, message):
-        """Queue a message (delayed by period)."""
-        self.msg_queue.put(message)
-        # don’t sleep here, handle pacing in _run
+        """Add a message to the list (delayed by period)."""
+        self.messages.append(message)
 
     def send_flush(self, message):
-        """Queue a message immediately (ignores pacing)."""
-        self.msg_queue.put_nowait(message)
+        """Add a message to the list immediately (ignores pacing)."""
+        self.messages.append(message)
 
     def clear_queue(self):
         """Clear all pending messages."""
-        with self.msg_queue.mutex:
-            self.msg_queue.queue.clear()
+        self.messages.clear()
 
     def _run(self):
-        """Worker thread: open port, send messages, handle errors."""
+        """Worker thread: open port, send messages in order repeatedly, handle errors."""
         try:
             self.ser = serial.Serial(self.com_port, self.speed, timeout=1)
         except Exception as e:
@@ -66,33 +63,27 @@ class SerialSender:
             self.on_failure()
             return
 
-        sent_anything = False
-
         with self.ser:
             while self.running:
-                try:
-                    msg = self.msg_queue.get(timeout=0.5)
-                    if self.ser.is_open:
-                        self.ser.write(msg.encode() + b"\r\n")
-                        self.log_debug(f"Sent: {msg}")
-                        sent_anything = True
-                        time.sleep(self.period)  # pacing here
-                    else:
-                        raise serial.SerialException("Port closed unexpectedly")
-                except queue.Empty:
-                    # only call on_done if we actually sent something before
-                    if sent_anything:
-                        self.on_done()
-                        sent_anything = False
+                if not self.messages:
+                    time.sleep(0.5)
                     continue
-                except Exception as e:
-                    logging.error(f"Serial error: {e}")
-                    self.on_failure()
-                    break
-
-        self.running = False
-        self.log_debug("SerialSender thread exited")
-
+                for msg in self.messages:
+                    if not self.running:
+                        break
+                    try:
+                        if self.ser.is_open:
+                            self.ser.write(msg.encode() + b"\r\n")
+                            self.log_debug(f"Sent: {msg}")
+                            time.sleep(self.period)
+                        else:
+                            raise serial.SerialException("Port closed unexpectedly")
+                    except Exception as e:
+                        logging.error(f"Serial error: {e}")
+                        self.on_failure()
+                        self.running = False
+                        break
+            self.log_debug("SerialSender thread exited")
 
     @staticmethod
     def list_ports():
