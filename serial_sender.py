@@ -55,7 +55,7 @@ class SerialSender:
         self.messages.clear()
 
     def _run(self):
-        """Worker thread: open port, send messages in order repeatedly, handle errors."""
+        """Worker thread: open port, send messages, and read responses."""
         try:
             self.ser = serial.Serial(self.com_port, self.speed, timeout=1)
         except Exception as e:
@@ -64,26 +64,35 @@ class SerialSender:
             return
 
         with self.ser:
+            last_send_time = 0
             while self.running:
-                if not self.messages:
-                    time.sleep(0.5)
-                    continue
-                for msg in self.messages:
-                    if not self.running:
-                        break
+                # --- Read incoming data ---
+                try:
+                    if self.ser.in_waiting > 0:
+                        response = self.ser.readline().decode(errors="replace").strip()
+                        if response:
+                            self.log_debug(f"Received: {response}")
+                except Exception as e:
+                    logging.error(f"Read error: {e}")
+                    self.on_failure()
+                    break
+
+                # --- Send outgoing messages ---
+                if self.messages and (time.time() - last_send_time) >= self.period:
+                    msg = self.messages.pop(0)  # send one at a time
                     try:
-                        if self.ser.is_open:
-                            self.ser.write(msg.encode() + b"\r\n")
-                            self.log_debug(f"Sent: {msg}")
-                            time.sleep(self.period)
-                        else:
-                            raise serial.SerialException("Port closed unexpectedly")
+                        self.ser.write(msg.encode() + b"\r\n")
+                        self.log_debug(f"Sent: {msg}")
                     except Exception as e:
-                        logging.error(f"Serial error: {e}")
+                        logging.error(f"Serial write error: {e}")
                         self.on_failure()
-                        self.running = False
                         break
+                    last_send_time = time.time()
+
+                time.sleep(0.05)  # prevent busy-loop
+
             self.log_debug("SerialSender thread exited")
+
 
     @staticmethod
     def list_ports():
