@@ -197,7 +197,6 @@ class MainApplication(tk.Tk):
         self.configuration.period = self.period.get()
         self.serial_sender = SerialSender(
             com_port=self.com_port,
-            period=self.configuration.period,
             speed=self.baud_rate_combo.get(),
             on_failure=lambda: self.sending_failed(),
             log_debug=self.log_debug

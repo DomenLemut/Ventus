@@ -4,13 +4,14 @@ import serial
 import serial.tools.list_ports
 import time
 import logging
+import sys
+import signal
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s")
 
 class SerialSender:
-    def __init__(self, com_port, period, speed, on_failure=None, log_debug=None):
+    def __init__(self, com_port, speed, on_failure=None, log_debug=None):
         self.com_port = com_port
-        self.period = int(period)
         self.speed = speed
         self.running = False
         self.messages = []
@@ -78,7 +79,7 @@ class SerialSender:
                     break
 
                 # --- Send outgoing messages ---
-                if self.messages and (time.time() - last_send_time) >= self.period:
+                if self.messages and (time.time() - last_send_time) >= self.messages.period:
                     msg = self.messages.pop(0)  # send one at a time
                     try:
                         self.ser.write(msg.encode() + b"\r\n")
@@ -93,8 +94,13 @@ class SerialSender:
 
             self.log_debug("SerialSender thread exited")
 
-
     @staticmethod
     def list_ports():
         """Helper to list available COM ports."""
         return serial.tools.list_ports.comports()
+
+def _handle_sigint(sig, frame):
+    logging.info("Interrupted, exiting...")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, _handle_sigint)
